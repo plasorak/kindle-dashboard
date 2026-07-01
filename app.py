@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import io
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-
+from icecream import ic
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -11,6 +11,7 @@ import matplotlib.ticker
 import requests
 from flask import Flask, Response, redirect, render_template_string
 from PIL import Image, ImageDraw, ImageFont
+from octopus_power import get_token, get_average_watts, get_latest_gas_kwh, get_day_electricity_cost_pence
 
 app = Flask(__name__)
 
@@ -206,6 +207,43 @@ def weather_icon(draw, x, y, size, code):
         draw.rectangle((x + 4, y + 4, x + size - 4, y + size - 4), outline=0, width=2)
 
 
+def fetch_current_watts() -> float | None:
+    api_key = os.environ.get("OCTOPUS_API_KEY")
+    device_id = os.environ.get("OCTOPUS_DEVICE_ID")
+    if not api_key or not device_id:
+        return None
+    try:
+        token = get_token(api_key)
+        return get_average_watts(token, device_id, minutes=3)
+    except Exception:
+        return None
+
+
+def fetch_yesterday_electricity_cost() -> float | None:
+    api_key = os.environ.get("OCTOPUS_API_KEY")
+    mpan    = os.environ.get("OCTOPUS_ELEC_MPAN")
+    serial  = os.environ.get("OCTOPUS_ELEC_SERIAL")
+    if not (api_key and mpan and serial):
+        return None
+    try:
+        pence, _, _ = get_day_electricity_cost_pence(api_key, mpan, serial, OCTOPUS_PRODUCT, OCTOPUS_TARIFF)
+        return pence
+    except Exception:
+        return None
+
+
+def fetch_latest_gas_kwh() -> tuple[float, str] | None:
+    api_key = os.environ.get("OCTOPUS_API_KEY")
+    mprn = os.environ.get("OCTOPUS_GAS_MPRN")
+    serial = os.environ.get("OCTOPUS_GAS_SERIAL")
+    if not (api_key and mprn and serial):
+        return None
+    try:
+        return get_latest_gas_kwh(api_key, mprn, serial)
+    except Exception:
+        return None
+
+
 def fetch_json(url):
     try:
         response = requests.get(url, timeout=30)
@@ -241,6 +279,10 @@ def build_price_graph(prices, target_width=772, target_height=260, font_path=Non
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
     floor = min(0, min(values))
+    if floor < 0:
+        floor = floor - (abs(floor) * 0.3)  # add 10% padding below zero if negative
+        ax.axhline(0, color="black", linewidth=1.0, linestyle="-")
+
     ax.plot(x, values, color="black", linewidth=1.5)
     ax.fill_between(x, values, 0, color="black", alpha=0.1)
     ax.set_ylim(bottom=floor)
@@ -379,23 +421,67 @@ def generate_dashboard_image():
 
     divider_y = TOP_MARGIN + WEATHER_ROWS * WEATHER_ROW_HEIGHT + 16
     draw.line((10, divider_y, WIDTH - 10, divider_y), fill=0, width=2)
-    draw.text((14, divider_y + 8), "Octopus Agile", font=font_regular, fill=0)
+    draw.text((14, divider_y + 8), "Energy", font=font_regular, fill=0)
+
+    current_watts = fetch_current_watts()
+    gas_reading = fetch_latest_gas_kwh()
+    yesterday_cost_pence = fetch_yesterday_electricity_cost()
+    
+    ELEC_TIME_X = 190
+
+    right_x = WIDTH - 14
+    if current_watts is not None:
+        watts_text = f"Last 3 min: {current_watts:.0f} W"
+        tw = draw.textlength(watts_text, font=font_regular)
+        draw.text((right_x - tw, divider_y + 8), watts_text, font=font_regular, fill=0)
+        #right_x -= tw + 24
+
+
+    if yesterday_cost_pence is not None:
+        yest_text = f"Yesterday: £{yesterday_cost_pence/100:.2f}"
+        tw = draw.textlength(yest_text, font=font_small)
+        draw.text((right_x - tw, divider_y + 34), yest_text, font=font_small, fill=0)
+        #right_x -= tw + 24
+
+
+    if os.environ.get("OCTOPUS_GAS_MPRN") and os.environ.get("OCTOPUS_GAS_SERIAL"):
+        if gas_reading is not None:
+            kwh, interval_start = gas_reading
+            local_time = datetime.fromisoformat(interval_start.replace("Z", "+00:00")).astimezone(ZoneInfo(TZ_NAME)).strftime("%H:%M")
+            gas_text = f"Gas: {kwh:.2f} kWh ({local_time})"
+        else:
+            gas_text = "Gas: N/A"
+        tw = draw.textlength(gas_text, font=font_small)
+        draw.text((right_x - tw, divider_y + 8), gas_text, font=font_small, fill=0)
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     octopus_url = OCTOPUS_URL_TEMPLATE.format(product=OCTOPUS_PRODUCT, tariff=OCTOPUS_TARIFF, period_from=now)
     octopus_data = fetch_json(octopus_url)
 
+
+
+
+
     if octopus_data and "results" in octopus_data:
         now_dt = datetime.now(timezone.utc)
         slots = sorted(
-            [(slot["valid_from"], slot["value_inc_vat"]) for slot in octopus_data["results"]
-             if datetime.fromisoformat(slot["valid_from"].replace("Z", "+00:00")) >= now_dt],
+            [
+                (slot["valid_from"], slot["value_inc_vat"]) for slot in octopus_data["results"]
+                if datetime.fromisoformat(slot["valid_from"].replace("Z", "+00:00")) >= now_dt - timedelta(minutes=30)
+            ],
             key=lambda item: item[0],
         )
         if slots:
+            current_price = slots[0][1]
+            if current_price is not None:
+                price_text = f"Now: {current_price:.2f} p/kWh"
+                tw = draw.textlength(price_text, font=font_regular)
+                draw.text((right_x - tw, divider_y + 28), price_text, font=font_regular, fill=0)
+                #right_x -= tw + 24
+
+
             prices = slots
             # x column where time ranges start (after the longest label "Most expensive 2h:")
-            ELEC_TIME_X = 190
             if len(prices) >= 8:
                 window_4h = min(
                     (
@@ -409,6 +495,7 @@ def generate_dashboard_image():
                 win_end_local = iso_to_local(prices[window_4h[0] + 8][0], "%H:%M") if window_4h[0] + 8 < len(prices) else "?"
                 draw.text((14, divider_y + 34), "Cheapest 4h:", font=font_small, fill=0)
                 draw.text((ELEC_TIME_X, divider_y + 34), f"{win_start_local} - {win_end_local}  (avg {win_avg:.1f} p/kWh)", font=font_small, fill=0)
+
             if len(prices) >= 4:
                 window_2h = max(
                     (
