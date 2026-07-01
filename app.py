@@ -242,7 +242,7 @@ def build_price_graph(prices, target_width=772, target_height=260, font_path=Non
     ax.set_facecolor("white")
     floor = min(0, min(values))
     ax.plot(x, values, color="black", linewidth=1.5)
-    ax.fill_between(x, values, floor, color="black", alpha=0.1)
+    ax.fill_between(x, values, 0, color="black", alpha=0.1)
     ax.set_ylim(bottom=floor)
     ax.set_ylabel("p/kWh", fontsize=9)
     ax.set_xticks(tick_idx)
