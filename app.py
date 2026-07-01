@@ -244,10 +244,10 @@ def build_price_graph(prices, target_width=772, target_height=260, font_path=Non
     ax.plot(x, values, color="black", linewidth=1.5)
     ax.fill_between(x, values, 0, color="black", alpha=0.1)
     ax.set_ylim(bottom=floor)
-    ax.set_ylabel("p/kWh", fontsize=9)
+    ax.set_ylabel("p/kWh", fontsize=11)
     ax.set_xticks(tick_idx)
-    ax.set_xticklabels([times[i] for i in tick_idx], rotation=45, fontsize=8)
-    ax.tick_params(axis="y", labelsize=9)
+    ax.set_xticklabels([times[i] for i in tick_idx], rotation=45, fontsize=10)
+    ax.tick_params(axis="y", labelsize=11)
     ax.grid(True, color="black", linestyle=":", linewidth=0.5)
     fig.tight_layout()
     buf = io.BytesIO()
@@ -289,10 +289,10 @@ def build_rain_chart(times, probs, target_width=304, target_height=260, font_pat
     ax.plot(x, values, color="black", linewidth=1.5)
     ax.fill_between(x, values, 0, color="black", alpha=0.1)
     ax.set_ylim(0, 100)
-    ax.set_ylabel("Rain %", fontsize=9)
+    ax.set_ylabel("Rain %", fontsize=11)
     ax.set_xticks(tick_idx)
-    ax.set_xticklabels([labels[i] for i in tick_idx], rotation=45, fontsize=8)
-    ax.tick_params(axis="y", labelsize=9)
+    ax.set_xticklabels([labels[i] for i in tick_idx], rotation=45, fontsize=10)
+    ax.tick_params(axis="y", labelsize=11)
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:.0f}%"))
     ax.grid(True, color="black", linestyle=":", linewidth=0.5, axis="y")
     fig.tight_layout()
@@ -310,8 +310,8 @@ def generate_dashboard_image():
     image = Image.new("L", (WIDTH, HEIGHT), color=255)
     draw = ImageDraw.Draw(image)
     font_path = find_font_path()
-    font_regular = ImageFont.truetype(font_path, 18) if font_path else ImageFont.load_default()
-    font_small = ImageFont.truetype(font_path, 14) if font_path else ImageFont.load_default()
+    font_regular = ImageFont.truetype(font_path, 20) if font_path else ImageFont.load_default()
+    font_small = ImageFont.truetype(font_path, 16) if font_path else ImageFont.load_default()
 
     # Column x positions (pixels) for weather table
     WX_DAY   = 34
@@ -367,7 +367,7 @@ def generate_dashboard_image():
             hourly_probs = hourly_probs[:24]
 
         # Rain chart on the right of the weather table, aligned with header row
-        RAIN_CHART_X = 334
+        RAIN_CHART_X = 360
         RAIN_CHART_Y = 32
         rain_chart_w = WIDTH - 14 - RAIN_CHART_X
         rain_chart_h = TOP_MARGIN + WEATHER_ROWS * WEATHER_ROW_HEIGHT - RAIN_CHART_Y
@@ -395,7 +395,7 @@ def generate_dashboard_image():
         if slots:
             prices = slots
             # x column where time ranges start (after the longest label "Most expensive 2h:")
-            ELEC_TIME_X = 160
+            ELEC_TIME_X = 190
             if len(prices) >= 8:
                 window_4h = min(
                     (
